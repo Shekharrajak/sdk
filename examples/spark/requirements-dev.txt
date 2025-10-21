@@ -1,0 +1,34 @@
+# Kubeflow Spark Client - Development Requirements
+# ==================================================
+#
+# Full development dependencies including testing and linting
+# Install with: pip install -r requirements-dev.txt
+
+# Include core requirements
+-r requirements-core.txt
+
+# Gateway backend support
+requests>=2.31.0,<3.0.0
+pyyaml>=6.0,<7.0
+
+# Testing
+pytest>=7.0,<9.0
+pytest-mock>=3.10,<4.0
+pytest-cov>=4.1.0,<6.0
+coverage>=7.0,<8.0
+
+# Code quality
+ruff>=0.12.2,<1.0
+black>=24.0.0,<25.0
+isort>=5.13.0,<6.0
+mypy>=1.8.0,<2.0
+
+# Development tools
+ipython>=8.20.0,<9.0
+ipdb>=0.13.13,<1.0
+rich>=13.0.0,<14.0
+python-dotenv>=1.0.0,<2.0
+
+# Documentation
+sphinx>=7.0.0,<8.0
+sphinx-rtd-theme>=2.0.0,<3.0

@@ -1,0 +1,26 @@
+# Kubeflow Spark Client - Requirements
+# =====================================
+#
+# Install all dependencies with:
+#   pip install -r requirements.txt
+#
+# Or install minimal dependencies:
+#   pip install -r requirements-core.txt
+
+# Core dependencies (required for OperatorBackend)
+kubernetes>=27.2.0,<30.0.0
+pydantic>=2.10.0,<3.0.0
+
+# Optional dependencies for GatewayBackend
+requests>=2.31.0,<3.0.0
+pyyaml>=6.0,<7.0
+
+# Development and testing dependencies
+pytest>=7.0,<9.0
+pytest-mock>=3.10,<4.0
+coverage>=7.0,<8.0
+ruff>=0.12.2,<1.0
+
+# Additional useful packages
+rich>=13.0.0,<14.0        # Pretty printing
+python-dotenv>=1.0.0,<2.0  # Environment variable management
