@@ -1,0 +1,8 @@
+# Kubeflow Spark Client - Core Requirements Only
+# ================================================
+#
+# Minimal dependencies for running Spark client with OperatorBackend
+# Install with: pip install -r requirements-core.txt
+
+kubernetes>=27.2.0,<30.0.0
+pydantic>=2.10.0,<3.0.0
