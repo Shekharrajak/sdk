@@ -33,7 +33,7 @@ For more examples, see the examples/ directory.
 """
 
 # Import the new backend-based implementation
-from kubeflow.spark.client_v2 import (
+from kubeflow.spark.client import (
     SparkClient,
     create_gateway_client,
     create_operator_client,

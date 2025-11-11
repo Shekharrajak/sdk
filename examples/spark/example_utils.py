@@ -467,12 +467,12 @@ def get_sample_spark_conf_for_use_case(use_case: str) -> Dict[str, str]:
 # ============================================================================
 
 EXAMPLES_METADATA = {
-    "01_hello_spark_wordcount": {
-        "title": "Hello Spark - Word Count",
+    "01_hello_spark_pi": {
+        "title": "Hello Spark - Calculate Pi",
         "level": 1,
         "category": "Getting Started",
         "time": "2-3 minutes",
-        "description": "Your first Spark job - classic word count example",
+        "description": "Your first Spark job - calculate Pi using Monte Carlo method",
     },
     "02_csv_data_analysis": {
         "title": "CSV Data Analysis",
