@@ -1,4 +1,4 @@
-# KEP-XX: Spark Client SDK for Kubeflow
+# KEP-107: Spark Client SDK for Kubeflow
 
 ## Authors
 
@@ -7,6 +7,8 @@
 ## Summary
 
 This proposal introduces a unified Spark client SDK for Kubeflow that enables data engineers, ML engineers, and data scientists to seamlessly submit, monitor, and manage Apache Spark applications on Kubernetes. Following the same architectural pattern as the Kubeflow Trainer client, the Spark client provides a cloud-native, backend-agnostic Python API for running distributed data processing and ML workloads using the Kubeflow Spark Operator.
+
+Ref https://github.com/kubeflow/sdk/issues/107
 
 ## Motivation
 
