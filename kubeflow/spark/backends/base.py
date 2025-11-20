@@ -16,9 +16,12 @@
 
 import abc
 from collections.abc import Iterator
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from kubeflow.spark.models import ApplicationStatus, SparkApplicationResponse
+from kubeflow.spark.models import ApplicationStatus, SessionInfo, SparkApplicationResponse
+
+if TYPE_CHECKING:
+    from kubeflow.spark.session import ManagedSparkSession
 
 
 class SparkBackend(abc.ABC):
@@ -184,3 +187,87 @@ class SparkBackend(abc.ABC):
         Subclasses can override this to clean up resources.
         """
         pass
+
+    # =========================================================================
+    # Session-Oriented Methods (for Spark Connect backends)
+    # =========================================================================
+    # These methods are optional and only need to be implemented by backends
+    # that support interactive session management (e.g., ConnectBackend).
+    # Batch-oriented backends (OperatorBackend, GatewayBackend) can leave
+    # these as default implementations that raise NotImplementedError.
+
+    def create_session(
+        self,
+        app_name: str,
+        **kwargs: Any,
+    ) -> "ManagedSparkSession":
+        """Create a new Spark Connect session.
+
+        This method is for backends that support interactive, session-based
+        workloads (e.g., Spark Connect). Batch-oriented backends should raise
+        NotImplementedError.
+
+        Args:
+            app_name: Name for the session/application
+            **kwargs: Backend-specific configuration
+
+        Returns:
+            ManagedSparkSession instance
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            RuntimeError: If session creation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support session-based operations. "
+            "Use ConnectBackend for interactive Spark sessions."
+        )
+
+    def get_session_status(self, session_id: str) -> SessionInfo:
+        """Get status of a Spark Connect session.
+
+        Args:
+            session_id: Session UUID
+
+        Returns:
+            SessionInfo with session metadata and metrics
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            RuntimeError: If request fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support session-based operations."
+        )
+
+    def list_sessions(self) -> List[SessionInfo]:
+        """List all active Spark Connect sessions.
+
+        Returns:
+            List of SessionInfo objects
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            RuntimeError: If request fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support session-based operations."
+        )
+
+    def close_session(self, session_id: str, release: bool = True) -> Dict[str, Any]:
+        """Close a Spark Connect session.
+
+        Args:
+            session_id: Session UUID to close
+            release: If True, release session resources on server
+
+        Returns:
+            Dictionary with closure response
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            RuntimeError: If closure fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support session-based operations."
+        )

@@ -1,0 +1,165 @@
+# Spark Connect Server Deployment for Kubernetes
+#
+# This manifest deploys a Spark Connect server that can be used to test
+# the Kubeflow Spark Connect backend integration.
+#
+# Deploy: kubectl apply -f spark-connect-server.yaml
+# Delete: kubectl delete -f spark-connect-server.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-connect
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-connect-role
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps"]
+  verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-connect-rolebinding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: spark-connect
+  namespace: default
+roleRef:
+  kind: Role
+  name: spark-connect-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-connect
+  namespace: default
+  labels:
+    app: spark-connect
+spec:
+  type: NodePort
+  selector:
+    app: spark-connect
+  ports:
+  - name: connect
+    port: 15002
+    targetPort: 15002
+    nodePort: 30000
+    protocol: TCP
+  - name: ui
+    port: 4040
+    targetPort: 4040
+    protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-connect
+  namespace: default
+  labels:
+    app: spark-connect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-connect
+  template:
+    metadata:
+      labels:
+        app: spark-connect
+    spec:
+      serviceAccountName: spark-connect
+      initContainers:
+      - name: download-packages
+        image: apache/spark:4.0.0
+        securityContext:
+          runAsUser: 185  # spark user
+        command:
+        - /bin/sh
+        - -c
+        - |
+          mkdir -p /ivy-cache
+          /opt/spark/bin/spark-submit \
+            --packages org.apache.spark:spark-connect_2.13:4.0.0 \
+            --conf spark.jars.ivy=/ivy-cache \
+            --class org.apache.spark.sql.connect.service.SparkConnectServer \
+            --help || true
+        volumeMounts:
+        - name: ivy-cache
+          mountPath: /ivy-cache
+      containers:
+      - name: spark-connect
+        image: apache/spark:4.0.0
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 185  # spark user
+        command:
+        - /opt/spark/sbin/start-connect-server.sh
+        args:
+        - --packages
+        - org.apache.spark:spark-connect_2.13:4.0.0
+        - --conf
+        - spark.jars.ivy=/ivy-cache
+        - --conf
+        - spark.driver.host=0.0.0.0
+        - --conf
+        - spark.driver.bindAddress=0.0.0.0
+        - --conf
+        - spark.connect.grpc.binding.address=0.0.0.0
+        - --conf
+        - spark.kubernetes.namespace=default
+        - --conf
+        - spark.kubernetes.authenticate.driver.serviceAccountName=spark-connect
+        env:
+        - name: SPARK_NO_DAEMONIZE
+          value: "true"
+        - name: SPARK_LOCAL_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: JAVA_TOOL_OPTIONS
+          value: "-Djava.net.preferIPv4Stack=true"
+        volumeMounts:
+        - name: ivy-cache
+          mountPath: /ivy-cache
+        ports:
+        - name: connect
+          containerPort: 15002
+          protocol: TCP
+        - name: ui
+          containerPort: 4040
+          protocol: TCP
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          tcpSocket:
+            port: 15002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: 15002
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: ivy-cache
+        emptyDir: {}
