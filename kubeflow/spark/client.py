@@ -19,9 +19,11 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from kubeflow.spark.backends.base import SparkBackend
+from kubeflow.spark.backends.connect import ConnectBackend, ConnectBackendConfig
 from kubeflow.spark.backends.gateway import GatewayBackend, GatewayBackendConfig
 from kubeflow.spark.backends.operator import OperatorBackend, OperatorBackendConfig
-from kubeflow.spark.models import ApplicationStatus, SparkApplicationResponse
+from kubeflow.spark.models import ApplicationStatus, SessionInfo, SparkApplicationResponse
+from kubeflow.spark.session import ManagedSparkSession
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +92,18 @@ class SparkClient:
 
     def __init__(
         self,
-        backend_config: Union[OperatorBackendConfig, GatewayBackendConfig, None] = None,
+        backend_config: Union[
+            OperatorBackendConfig, GatewayBackendConfig, ConnectBackendConfig, None
+        ] = None,
     ):
         """Initialize Spark client with specified backend.
 
         Args:
-            backend_config: Backend configuration. Either OperatorBackendConfig
-                          (for Kubernetes with Spark Operator) or GatewayBackendConfig
-                          (for REST API gateway). Defaults to OperatorBackendConfig.
+            backend_config: Backend configuration. Either:
+                          - OperatorBackendConfig: Kubernetes with Spark Operator
+                          - GatewayBackendConfig: REST API gateway
+                          - ConnectBackendConfig: Spark Connect for remote clusters
+                          Defaults to OperatorBackendConfig.
 
         Raises:
             ValueError: Invalid backend configuration
@@ -111,6 +117,8 @@ class SparkClient:
             self.backend: SparkBackend = OperatorBackend(backend_config)
         elif isinstance(backend_config, GatewayBackendConfig):
             self.backend = GatewayBackend(backend_config)
+        elif isinstance(backend_config, ConnectBackendConfig):
+            self.backend = ConnectBackend(backend_config)
         else:
             raise ValueError(f"Invalid backend config type: {type(backend_config)}")
 
@@ -441,6 +449,119 @@ class SparkClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - ensures cleanup."""
         self.close()
+
+    # =========================================================================
+    # Session-Oriented Methods (for Spark Connect)
+    # =========================================================================
+
+    def create_session(
+        self,
+        app_name: str,
+        **kwargs: Any,
+    ) -> ManagedSparkSession:
+        """Create a new Spark Connect session (ConnectBackend only).
+
+        This method creates an interactive Spark session for exploratory data
+        analysis, iterative development, and notebook-style workflows.
+
+        Note: Only available with ConnectBackend. OperatorBackend and GatewayBackend
+        are batch-oriented and will raise NotImplementedError.
+
+        Args:
+            app_name: Name for the session/application
+            **kwargs: Additional Spark configuration options
+
+        Returns:
+            ManagedSparkSession instance
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            RuntimeError: If session creation fails
+
+        Example:
+            ```python
+            from kubeflow.spark import SparkClient, ConnectBackendConfig
+
+            # Initialize with ConnectBackend
+            config = ConnectBackendConfig(connect_url="sc://spark-cluster:15002")
+            client = SparkClient(backend_config=config)
+
+            # Create session
+            session = client.create_session(app_name="data-analysis")
+
+            # Use PySpark API
+            df = session.sql("SELECT * FROM table")
+            result = df.collect()
+
+            # Cleanup
+            session.close()
+            ```
+        """
+        return self.backend.create_session(app_name=app_name, **kwargs)
+
+    def get_session_status(self, session_id: str) -> SessionInfo:
+        """Get status of a Spark Connect session (ConnectBackend only).
+
+        Args:
+            session_id: Session UUID
+
+        Returns:
+            SessionInfo with session metadata and metrics
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            ValueError: If session not found
+
+        Example:
+            ```python
+            session = client.create_session("my-app")
+            info = client.get_session_status(session.session_id)
+            print(f"Session state: {info.state}")
+            print(f"Queries executed: {info.metrics.queries_executed}")
+            ```
+        """
+        return self.backend.get_session_status(session_id)
+
+    def list_sessions(self) -> List[SessionInfo]:
+        """List all active Spark Connect sessions (ConnectBackend only).
+
+        Returns:
+            List of SessionInfo objects
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+
+        Example:
+            ```python
+            sessions = client.list_sessions()
+            for session_info in sessions:
+                print(f"{session_info.app_name}: {session_info.state}")
+            ```
+        """
+        return self.backend.list_sessions()
+
+    def close_session(self, session_id: str, release: bool = True) -> Dict[str, Any]:
+        """Close a Spark Connect session (ConnectBackend only).
+
+        Args:
+            session_id: Session UUID to close
+            release: If True, release session resources on server
+
+        Returns:
+            Dictionary with closure response
+
+        Raises:
+            NotImplementedError: If backend doesn't support sessions
+            ValueError: If session not found
+
+        Example:
+            ```python
+            session = client.create_session("my-app")
+            # ... use session ...
+            client.close_session(session.session_id)
+            ```
+        """
+        return self.backend.close_session(session_id, release=release)
 
 
 # Convenience factory methods for backward compatibility

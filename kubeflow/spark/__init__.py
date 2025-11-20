@@ -3,10 +3,11 @@
 This module provides a unified Python client for managing Apache Spark applications
 on Kubernetes using different backends:
 
-- **OperatorBackend**: Cloud-native backend using Kubeflow Spark Operator (recommended)
+- **OperatorBackend**: Cloud-native backend using Kubeflow Spark Operator (recommended for batch jobs)
 - **GatewayBackend**: REST API backend for managed Spark gateways
+- **ConnectBackend**: Spark Connect backend for remote interactive sessions
 
-Quick Start:
+Quick Start (Batch Jobs):
     ```python
     from kubeflow.spark import SparkClient
 
@@ -29,12 +30,33 @@ Quick Start:
     print(f"Application state: {status.state}")
     ```
 
+Quick Start (Interactive Sessions with Spark Connect):
+    ```python
+    from kubeflow.spark import SparkClient, ConnectBackendConfig
+
+    # Connect to existing Spark cluster
+    config = ConnectBackendConfig(connect_url="sc://spark-cluster:15002")
+    client = SparkClient(backend_config=config)
+
+    # Create interactive session
+    session = client.create_session(app_name="data-analysis")
+
+    # Use standard PySpark API
+    df = session.sql("SELECT * FROM table")
+    result = df.filter(df.status == "active").collect()
+
+    # Cleanup
+    session.close()
+    ```
+
 For more examples, see the examples/ directory.
 """
 
 # Import the new backend-based implementation
 # Export backend configs for advanced usage
 from kubeflow.spark.backends import (
+    ConnectBackend,
+    ConnectBackendConfig,
     GatewayBackend,
     GatewayBackendConfig,
     OperatorBackend,
@@ -52,6 +74,7 @@ from kubeflow.spark.models import (
     # Status Models
     ApplicationStatus,
     BatchSchedulerConfig,
+    ConnectBackendConfig,
     DeployMode,
     DynamicAllocation,
     GPUSpec,
@@ -60,11 +83,15 @@ from kubeflow.spark.models import (
     # Configuration Models
     RestartPolicy,
     RestartPolicyType,
+    # Session Models (for Spark Connect)
+    SessionInfo,
+    SessionMetrics,
     # Request & Response
     SparkApplicationRequest,
     SparkApplicationResponse,
     SparkUIConfiguration,
 )
+from kubeflow.spark.session import ManagedSparkSession
 
 # Export validation
 from kubeflow.spark.validation import (
@@ -86,6 +113,12 @@ __all__ = [
     "OperatorBackendConfig",
     "GatewayBackend",
     "GatewayBackendConfig",
+    "ConnectBackend",
+    "ConnectBackendConfig",
+    # Session Management (Spark Connect)
+    "ManagedSparkSession",
+    "SessionInfo",
+    "SessionMetrics",
     # Request & Response Models
     "SparkApplicationRequest",
     "SparkApplicationResponse",

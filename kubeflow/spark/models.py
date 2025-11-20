@@ -657,6 +657,96 @@ class SparkApplicationResponse:
 
 
 @dataclass
+class ConnectBackendConfig:
+    """Configuration for Spark Connect backend.
+
+    This backend enables remote connectivity to existing Spark clusters via
+    Spark Connect protocol (gRPC-based).
+
+    Attributes:
+        connect_url: Spark Connect URL (format: sc://host:port/;param1=value;param2=value)
+        token: Bearer token for authentication (enables SSL automatically)
+        use_ssl: Enable TLS/SSL for secure communication
+        user_id: User identifier for session management
+        session_id: Pre-defined session UUID for session sharing
+        grpc_max_message_size: Maximum gRPC message size in bytes
+
+        # Auto-provisioning (for Kubeflow-managed clusters)
+        enable_auto_provision: Automatically provision Spark Connect server if not exists
+        auto_provision_config: SparkApplication config for auto-provisioned server
+        namespace: Kubernetes namespace for auto-provisioned server
+
+        # Kubeflow integration
+        enable_monitoring: Enable metrics collection
+        artifact_staging_path: Path for staging artifacts (JARs, files, etc.)
+        timeout: Default timeout for operations in seconds
+    """
+
+    connect_url: str
+    token: Optional[str] = None
+    use_ssl: bool = True
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    grpc_max_message_size: int = 128 * 1024 * 1024  # 128MB default
+
+    # Auto-provisioning
+    enable_auto_provision: bool = False
+    auto_provision_config: Optional["SparkApplicationRequest"] = None
+    namespace: str = "default"
+
+    # Kubeflow integration
+    enable_monitoring: bool = True
+    artifact_staging_path: Optional[str] = None
+    timeout: int = 300
+
+
+@dataclass
+class SessionMetrics:
+    """Metrics for a Spark Connect session.
+
+    Attributes:
+        session_id: Session UUID
+        queries_executed: Number of queries executed
+        active_queries: Number of currently active queries
+        artifacts_uploaded: Number of artifacts uploaded
+        data_read_bytes: Total bytes read
+        data_written_bytes: Total bytes written
+        execution_time_ms: Total execution time in milliseconds
+    """
+
+    session_id: str
+    queries_executed: int = 0
+    active_queries: int = 0
+    artifacts_uploaded: int = 0
+    data_read_bytes: int = 0
+    data_written_bytes: int = 0
+    execution_time_ms: int = 0
+
+
+@dataclass
+class SessionInfo:
+    """Information about a Spark Connect session.
+
+    Attributes:
+        session_id: Session UUID
+        app_name: Application name
+        user_id: User identifier
+        created_at: Session creation time
+        last_activity: Last activity timestamp
+        state: Session state (active, idle, closed)
+        metrics: Session metrics
+    """
+
+    session_id: str
+    app_name: str
+    user_id: Optional[str] = None
+    created_at: Optional[str] = None
+    last_activity: Optional[str] = None
+    state: str = "active"
+    metrics: Optional[SessionMetrics] = None
+
+
+@dataclass
 class ApplicationStatus:
     """Status information for a Spark application.
 

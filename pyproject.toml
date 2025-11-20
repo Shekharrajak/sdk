@@ -43,6 +43,11 @@ spark-gateway = [
   "requests>=2.31.0",
   "pyyaml>=6.0",
 ]
+spark-connect = [
+  "pyspark[connect]>=3.4.0",
+  "grpcio>=1.48.0",
+  "pyarrow>=10.0.0",
+]
 
 [dependency-groups]
 dev = [
