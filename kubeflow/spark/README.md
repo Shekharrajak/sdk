@@ -338,6 +338,73 @@ Both clients provide:
 - Log streaming capabilities
 - Context manager support
 
+## Monitoring and Debugging
+
+### Access Spark UI
+
+**Port Forward to Spark UI:**
+```bash
+kubectl port-forward -n default svc/spark-connect 4040:4040
+```
+
+Open in browser: http://localhost:4040
+
+**Navigate Spark UI Tabs:**
+- **Jobs Tab**: View all jobs, click job to see stages and tasks
+- **Stages Tab**: View stage details, task metrics, and task-level stdout/stderr
+- **Executors Tab**: Click stdout/stderr links for each executor to view logs
+- **SQL Tab**: View DataFrame query execution plans and metrics
+- **Environment Tab**: Check Spark configuration and environment variables
+
+### Debug DataFrame Queries
+
+**View Query Execution Plans:**
+```python
+# In Spark UI -> SQL Tab
+# Shows:
+# - Physical and logical plans
+# - Query execution DAG
+# - Shuffle and I/O metrics
+# - Task execution timeline
+```
+
+**Check Query Performance:**
+- Click on query in SQL Tab to see detailed metrics
+- View stage execution time and data shuffle
+- Identify bottlenecks in task distribution
+- Check partition skew and executor utilization
+
+### View Application Logs
+
+**Using kubectl:**
+```bash
+# Spark Connect driver logs
+kubectl logs -l app=spark-connect -n default -f
+
+# SparkApplication driver logs
+kubectl logs <app-name>-driver -n default
+
+# Executor logs
+kubectl logs <app-name>-exec-1 -n default
+```
+
+**Using SparkClient:**
+```python
+# Stream logs from driver
+for line in client.get_logs(submission_id):
+    print(line)
+
+# Get specific executor logs
+for line in client.get_logs(submission_id, executor_id="1"):
+    print(line)
+```
+
+**Filter logs by level:**
+```bash
+kubectl logs -l app=spark-connect -n default | grep ERROR
+kubectl logs -l app=spark-connect -n default | grep -E "WARN|ERROR"
+```
+
 ## Troubleshooting
 
 ### Common Issues
