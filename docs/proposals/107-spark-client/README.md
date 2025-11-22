@@ -25,10 +25,12 @@ This creates friction for data engineers and ML practitioners who want to focus 
 ### Goals
 
 - Design a unified, Pythonic SDK for managing Spark applications on Kubernetes
-- Support multiple backends (Kubernetes Operator, REST Gateway) following the Trainer pattern
+- Support multiple backends (Kubernetes Operator, REST Gateway, Spark Connect) following the Trainer pattern
+- Enable both batch job submission and interactive session-based workflows
 - Enable seamless integration with Kubeflow ML pipelines and workflows
 - Provide comprehensive monitoring, logging, and debugging capabilities
 - Support production features: dynamic allocation, GPU scheduling, volumes, monitoring
+- Support interactive data exploration and notebook-style workflows via Spark Connect
 - Deliver excellent developer experience with minimal boilerplate
 
 ### Non-Goals
@@ -53,7 +55,7 @@ We propose a **SparkClient** SDK that follows the same architectural pattern as 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     SparkClient (User API)                  │
-│  - submit_application(), get_status(), get_logs(), delete() │
+│  - submit_application(), create_session(), get_status()     │
 └──────────────────────┬──────────────────────────────────────┘
                        │ delegates to
                        ▼
@@ -62,13 +64,14 @@ We propose a **SparkClient** SDK that follows the same architectural pattern as 
 │  - Defines standard methods all backends must implement     │
 └──────────────────────┬──────────────────────────────────────┘
                        │ implemented by
-           ┌───────────┴────────────┬──────────────────┐
-           ▼                        ▼                  ▼
-┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│OperatorBackend   │   │  GatewayBackend  │   │  LocalBackend    │
-│(Spark Operator   │   │  (REST Gateway)  │   │  (Future)        │
-│ CRDs on K8s)     │   │                  │   │                  │
-└──────────────────┘   └──────────────────┘   └──────────────────┘
+           ┌───────────┴─────────────┬──────────────────┬────────────────┐
+           ▼                         ▼                  ▼                ▼
+┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│OperatorBackend   │   │  GatewayBackend  │   │ ConnectBackend   │   │  LocalBackend    │
+│(Spark Operator   │   │  (REST Gateway)  │   │  (Spark Connect/ │   │  (Future)        │
+│ CRDs on K8s)     │   │                  │   │   Interactive)   │   │                  │
+└──────────────────┘   └──────────────────┘   └──────────────────┘   └──────────────────┘
+     Batch Jobs            Batch Jobs            Sessions              Local Dev
 ```
 
 ## Design Details
@@ -268,6 +271,233 @@ Implements the backend for managed Spark gateways:
 - Supports basic auth, token auth, and custom authentication
 - Provides session-based and batch job execution
 
+
+#### 3. ConnectBackend (Spark Connect / Interactive Sessions)
+
+Implements session-oriented backend using Spark Connect protocol (gRPC):
+
+**Key Features**:
+- Remote connectivity to existing Spark clusters via Spark Connect (gRPC)
+- Session-based interactive workloads (exploratory analysis, notebooks)
+- Full PySpark DataFrame API support
+- Artifact upload (JARs, Python files)
+- SSL/TLS and Bearer token authentication
+
+**Architecture**:
+```python
+ConnectBackend → ManagedSparkSession → Native PySpark SparkSession
+```
+
+**Use Cases**:
+- Interactive data exploration and analysis
+- Notebook-style workflows (Jupyter, IPython)
+- Iterative development and testing
+- Connecting to remote managed Spark clusters
+
+**Configuration**:
+```python
+from kubeflow.spark import SparkClient, ConnectBackendConfig
+
+config = ConnectBackendConfig(
+    connect_url="sc://spark-cluster.default.svc:15002",
+    token="bearer-token",  # Optional authentication
+    use_ssl=True,          # SSL/TLS for secure communication
+)
+client = SparkClient(backend_config=config)
+
+# Create interactive session
+session = client.create_session(app_name="data-analysis")
+
+# Use standard PySpark API
+df = session.sql("SELECT * FROM sales WHERE date >= '2024-01-01'")
+result = df.groupBy("product").sum("amount").collect()
+
+# Upload artifacts
+session.upload_artifacts("/path/to/lib.jar")
+session.upload_artifacts("/path/to/package.zip", pyfile=True)
+
+# Get session metrics
+metrics = session.get_metrics()
+print(f"Queries executed: {metrics.queries_executed}")
+
+# Cleanup
+session.close()
+```
+
+**Difference from Batch Backends**:
+- **Session-oriented**: Long-lived connections vs. one-time job submission
+- **Interactive**: Real-time query execution vs. batch processing
+- **State management**: Maintains session state (temp views, UDFs)
+- **API surface**: Session methods (create_session, close_session) vs. batch methods (submit_application, wait_for_completion)
+
+**ManagedSparkSession API**:
+```python
+# Standard PySpark DataFrame API
+df = session.sql("SELECT * FROM table")
+df = session.read.parquet("s3a://bucket/data/")
+df = session.table("database.table")
+df = session.range(1000)
+
+# Kubeflow extensions
+session.upload_artifacts(*paths, pyfile=True)
+session.export_to_pipeline_artifact(df, "/outputs/data.parquet")
+metrics = session.get_metrics()
+cloned = session.clone()  # Clone with shared state
+
+# Context manager support
+with client.create_session("my-app") as session:
+    df = session.sql("SELECT * FROM data")
+    # Auto-cleanup on exit
+```
+
+### Spark Connect Implementation Details
+
+#### Connection URL Format
+
+Spark Connect uses URL-based configuration:
+
+```
+sc://host:port/;param1=value;param2=value
+```
+
+**Examples**:
+```python
+# Kubernetes service
+"sc://spark-cluster.default.svc.cluster.local:15002"
+
+# With authentication
+"sc://spark-cluster:15002/;token=bearer-token"
+
+# Port-forwarded local
+"sc://localhost:15002"
+```
+
+#### Session Lifecycle
+
+```
+1. Client Configuration → ConnectBackend initialized
+2. create_session() → gRPC connection established
+3. Session active → Execute queries, upload artifacts
+4. close(release=True) → Resources released on server
+5. Session closed → Can no longer execute operations
+```
+
+#### Backend Selection Strategy
+
+| Backend | Use Case | Session Type | Lifecycle |
+|---------|----------|--------------|-----------|
+| **OperatorBackend** | Batch jobs, scheduled pipelines | One-time submission | Submit → Monitor → Complete/Fail |
+| **GatewayBackend** | REST API integration, managed platforms | Batch or session | Submit via HTTP → Poll status |
+| **ConnectBackend** | Interactive analysis, notebooks | Long-lived session | Create → Query → Close |
+
+**When to use ConnectBackend**:
+- Exploratory data analysis with immediate feedback
+- Jupyter/IPython notebook workflows
+- Interactive debugging and development
+- Connecting to existing remote Spark clusters
+- Requires Spark 3.4+ with Connect support
+
+**When to use OperatorBackend**:
+- Production batch ETL pipelines
+- Scheduled data processing jobs
+- CI/CD integration with Kubeflow Pipelines
+- Full control over Spark cluster resources (driver, executors)
+- Dynamic allocation and auto-scaling needs
+
+### Example: Interactive Data Exploration
+
+```python
+from kubeflow.spark import SparkClient, ConnectBackendConfig
+
+# Setup
+config = ConnectBackendConfig(
+    connect_url="sc://spark-connect-server.spark.svc:15002",
+    use_ssl=True,
+)
+client = SparkClient(backend_config=config)
+
+# Create session
+with client.create_session(app_name="explore-sales") as session:
+    # Load data
+    sales_df = session.read.parquet("s3a://data/sales/")
+
+    # Interactive analysis
+    by_product = sales_df.groupBy("product").sum("revenue")
+    top_products = by_product.orderBy("sum(revenue)", ascending=False).limit(10)
+
+    # View results
+    for row in top_products.collect():
+        print(f"{row.product}: ${row['sum(revenue)']:,.2f}")
+
+    # Export for pipeline
+    session.export_to_pipeline_artifact(
+        top_products,
+        "/outputs/top_products.parquet"
+    )
+
+    # Check metrics
+    metrics = session.get_metrics()
+    print(f"Total queries: {metrics.queries_executed}")
+```
+
+### Example: Notebook Workflow
+
+```python
+# Cell 1: Setup
+from kubeflow.spark import SparkClient, ConnectBackendConfig
+
+config = ConnectBackendConfig(connect_url="sc://localhost:15002")
+client = SparkClient(backend_config=config)
+session = client.create_session("notebook-analysis")
+
+# Cell 2: Load and explore
+df = session.sql("SELECT * FROM customers LIMIT 100")
+df.show()
+
+# Cell 3: Feature engineering
+features = df.select("customer_id", "age", "spend_total")
+features = features.withColumn("spend_per_year", features.spend_total / features.age)
+
+# Cell 4: Analysis
+summary = features.describe()
+summary.show()
+
+# Cell 5: Cleanup
+session.close()
+```
+
+### Integration with Other Backends
+
+Combined workflow example:
+
+```python
+from kubeflow.spark import SparkClient, ConnectBackendConfig, OperatorBackendConfig
+
+# Step 1: Interactive development with ConnectBackend
+connect_config = ConnectBackendConfig(connect_url="sc://dev-cluster:15002")
+dev_client = SparkClient(backend_config=connect_config)
+
+with dev_client.create_session("dev") as session:
+    # Test and validate query
+    test_df = session.sql("SELECT * FROM data LIMIT 1000")
+    test_df.show()
+    # Iterate and refine...
+
+# Step 2: Production batch job with OperatorBackend
+prod_config = OperatorBackendConfig(namespace="production")
+prod_client = SparkClient(backend_config=prod_config)
+
+# Submit validated job at scale
+response = prod_client.submit_application(
+    app_name="production-etl",
+    main_application_file="s3a://jobs/etl_pipeline.py",
+    driver_cores=4,
+    driver_memory="16g",
+    executor_cores=4,
+    executor_memory="32g",
+    num_executors=50,
+)
+```
 #### 4. Data Models
 
 **SparkApplicationResponse**:
@@ -624,13 +854,15 @@ def spark_preprocessing(data_path: str) -> str:
 |--------|---------------|--------------|
 | **CRD** | TrainJob | SparkApplication |
 | **Operator** | Training Operator | Spark Operator |
-| **Backends** | Kubernetes, LocalProcess, Container | Operator, Gateway |
-| **Primary Use Case** | Distributed model training | Data processing & feature engineering |
+| **Backends** | Kubernetes, LocalProcess, Container | Operator, Gateway, Connect |
+| **Primary Use Case** | Distributed model training | Data processing, feature engineering, interactive analysis |
 | **Distributed Pattern** | Multi-node training (MPI, PyTorch) | Multi-executor Spark (driver + executors) |
 | **Dynamic Scaling** | Fixed replicas | Dynamic allocation (auto-scaling) |
 | **Storage** | PVCs, object storage via initializers | HDFS, S3, object storage natively |
 | **Monitoring** | Job logs, status | Spark UI, metrics, executor logs |
-| **API Style** | train(), list_jobs() | submit_application(), list_applications() |
+| **API Style** | train(), list_jobs() | submit_application(), create_session() |
+| **Workload Type** | Batch training jobs | Batch jobs + interactive sessions |
+| **Session Support** | No | Yes (via Connect backend) |
 
 Both clients share:
 - Backend abstraction for flexibility
