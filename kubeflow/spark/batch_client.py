@@ -128,6 +128,8 @@ class BatchSparkClient(BaseSparkClient):
         main_application_file: str = "",
         spark_version: str = "3.5.0",
         app_type: str = "Python",
+        image: Optional[str] = None,
+        image_pull_policy: str = "IfNotPresent",
         driver_cores: int = 1,
         driver_memory: str = "1g",
         executor_cores: int = 1,
@@ -151,6 +153,12 @@ class BatchSparkClient(BaseSparkClient):
                                   Supported formats: local://, s3a://, http://, etc.
             spark_version: Spark version (default: "3.5.0")
             app_type: Application type: "Python", "Scala", "Java", "R" (default: "Python")
+            image: Docker image for Spark driver and executors (optional).
+                  If not provided, uses backend default or built-in default.
+                  Precedence: per-job image > backend default > built-in default.
+                  Example: "gcr.io/spark-operator/spark-py:3.5.1"
+            image_pull_policy: Image pull policy (default: "IfNotPresent")
+                              Options: "Always", "IfNotPresent", "Never"
             driver_cores: Number of CPU cores for driver (default: 1)
             driver_memory: Memory for driver, e.g., "1g", "512m" (default: "1g")
             executor_cores: Number of CPU cores per executor (default: 1)
@@ -190,13 +198,21 @@ class BatchSparkClient(BaseSparkClient):
                 driver_memory="4g",
             )
             print(f"Submitted: {response.submission_id}")
+
+            # With custom image (per-job override)
+            response = client.submit_application(
+                app_name="custom-deps",
+                image="company-registry.io/spark-ml:3.5.0",
+                main_application_file="s3a://my-bucket/jobs/ml_job.py",
+                driver_cores=4,
+                driver_memory="8g",
+            )
             ```
         """
-        # Auto-generate name if not provided (similar to TrainerClient)
+        # Auto-generate name if not provided
         if app_name is None:
             import secrets
             import string
-            # Generate a random 12-character alphanumeric name
             app_name = "spark-" + "".join(
                 secrets.choice(string.ascii_lowercase + string.digits) for _ in range(12)
             )
@@ -207,6 +223,8 @@ class BatchSparkClient(BaseSparkClient):
             main_application_file=main_application_file,
             spark_version=spark_version,
             app_type=app_type,
+            image=image,
+            image_pull_policy=image_pull_policy,
             driver_cores=driver_cores,
             driver_memory=driver_memory,
             executor_cores=executor_cores,
